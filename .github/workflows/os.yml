@@ -1,0 +1,51 @@
+name: Build OS (immagine Raspberry Pi 3)
+# Compila l'APK e lo inserisce in un'immagine LineageOS 17.1 per Raspberry Pi 3 (strada veloce, senza compilare Android).
+# Serve un LINK DIRETTO all'immagine di KonstaKANG (.zip/.img/.xz/.gz): per esempio caricala in una Release del tuo repo.
+on:
+  workflow_dispatch:
+    inputs:
+      image_url:
+        description: "Link diretto all'immagine LineageOS 17.1 per Raspberry Pi 3"
+        required: true
+
+jobs:
+  apk:
+    uses: ./.github/workflows/build.yml
+    secrets: inherit
+
+  image:
+    needs: apk
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: LSPIN-TV-apk
+          path: apk
+      - name: Spazio di lavoro
+        run: sudo mkdir -p /mnt/work && sudo chown "$USER" /mnt/work
+      - name: Scarico l'immagine di base
+        working-directory: /mnt/work
+        env:
+          URL: ${{ inputs.image_url }}
+        run: |
+          curl -fL --retry 3 -o stock "$URL"
+          case "$(file -b stock)" in
+            Zip*)  mv stock stock.zip ;;
+            XZ*)   mv stock stock.xz ;;
+            gzip*) mv stock stock.gz ;;
+            *)     mv stock stock.img ;;
+          esac
+          ls -lh /mnt/work
+      - name: Inserisco LSPIN TV nell'immagine
+        run: |
+          bash os/patch-image.sh /mnt/work/stock.* apk/app-release.apk /mnt/work/LSPIN-TV-OS-rpi3.img
+          rm -f /mnt/work/stock.*
+      - name: Comprimo
+        run: xz -T0 -3 /mnt/work/LSPIN-TV-OS-rpi3.img
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LSPIN-TV-OS-rpi3
+          path: /mnt/work/LSPIN-TV-OS-rpi3.img.xz
+          compression-level: 0
+          retention-days: 7
